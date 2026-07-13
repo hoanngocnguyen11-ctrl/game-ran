@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Game Rắn Săn Mồi - 20 Màn Chơi</title>
+    <style>
+        body { text-align: center; background: #222; color: white; font-family: Arial, sans-serif; }
+        canvas { background: #111; display: none; margin: 15px auto; border: 4px solid #4CAF50; box-shadow: 0 0 20px #4CAF50; }
+        .score-box { font-size: 20px; font-weight: bold; margin-top: 10px; display: none; }
+
+        /* Giao diện màn hình chọn màn */
+        #menuScreen { max-width: 600px; margin: 50px auto; padding: 20px; background: #333; border-radius: 10px; }
+        .level-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-top: 20px; }
+        .level-btn { padding: 15px; font-size: 18px; font-weight: bold; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .level-btn:hover { background: #45a049; }
+        .level-btn.locked { background: #555; color: #888; cursor: not-allowed; }
+
+        /* Khu vực nút điều khiển trong game */
+        .control-panel { display: none; margin: 15px auto; text-align: center; }
+        .game-btn { padding: 10px 20px; font-size: 16px; font-weight: bold; margin: 0 8px; border: none; border-radius: 5px; cursor: pointer; color: white; }
+        #pauseBtn { background: #ff9800; }
+        #pauseBtn:hover { background: #e68a00; }
+        #restartBtn { background: #2196F3; }
+        #restartBtn:hover { background: #0b7dda; }
+        #backBtn { background: #f44336; }
+        #backBtn:hover { background: #da190b; }
+    </style>
+</head>
+<body>
+    <h1>Game Rắn Săn Mồi Cấp Độ 🐍</h1>
+
+    <!-- MÀN HÌNH CHỌN MÀN -->
+    <div id="menuScreen">
+        <h2>Chọn Màn Chơi (1 - 20)</h2>
+        <p>Mỗi màn sẽ tăng dần tốc độ và số táo cần ăn!</p>
+        <div class="level-grid" id="levelGrid"></div>
+    </div>
+
+    <!-- THÔNG TIN TRẬN ĐẤU -->
+    <div class="score-box" id="infoBox">
+        Màn: <span id="currentLevelText">1</span> |
+        Táo đã ăn: <span id="score">0</span>/<span id="targetScore">5</span> |
+        Trạng thái: <span id="statusText" style="color: #4CAF50;">Đang chạy</span>
+    </div>
+
+    <!-- KHUNG TRANH CHƠI GAME -->
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+    <!-- KHU VỰC ĐIỀU KHIỂN GAME -->
+    <div class="control-panel" id="controlPanel">
+        <button id="pauseBtn" class="game-btn" onclick="togglePause()">Tạm Dừng</button>
+        <button id="restartBtn" class="game-btn" onclick="restartLevel()">Chơi Lại</button>
+        <button id="backBtn" class="game-btn" onclick="goBackToMenu()">Quay lại Menu</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+
+        let snake = [];
+        let food = { x: 5, y: 5 };
+        let dx = 0, dy = 0;
+        let score = 0;
+        let gameInterval = null;
+
+        let currentLevel = 1;
+        let maxUnlockedLevel = 1;
+        const totalLevels = 20;
+
+        let isPaused = false; // Trạng thái tạm dừng
+
+        function getLevelConfig(level) {
+            return {
+                target: 5 + (level - 1) * 2,
+                speed: 120 - (level - 1) * 4
+            };
+        }
+
+        function createMenu() {
+            const grid = document.getElementById("levelGrid");
+            grid.innerHTML = "";
+            for (let i = 1; i <= totalLevels; i++) {
+                const btn = document.createElement("button");
+                btn.innerText = i;
+                if (i <= maxUnlockedLevel) {
+                    btn.className = "level-btn";
+                    btn.onclick = () => startLevel(i);
+                } else {
+                    btn.className = "level-btn locked";
+                    btn.title = "Hãy vượt qua màn trước để mở khóa!";
+                }
+                grid.appendChild(btn);
+            }
+        }
+
+        function startLevel(level) {
+            currentLevel = level;
+            const config = getLevelConfig(level);
+
+            document.getElementById("menuScreen").style.display = "none";
+            document.getElementById("infoBox").style.display = "block";
+            canvas.style.display = "block";
+            document.getElementById("controlPanel").style.display = "block";
+
+            document.getElementById("currentLevelText").innerText = level;
+            document.getElementById("targetScore").innerText = config.target;
+
+            isPaused = false;
+            document.getElementById("pauseBtn").innerText = "Tạm Dừng";
+            document.getElementById("statusText").innerText = "Đang chạy";
+            document.getElementById("statusText").style.color = "#4CAF50";
+
+            snake = [{ x: 10, y: 10 }];
+            dx = 0; dy = 0; score = 0;
+            document.getElementById("score").innerText = score;
+            generateFood();
+
+            runGameLoop(config.speed);
+        }
+
+        function runGameLoop(speed) {
+            if (gameInterval) clearInterval(gameInterval);
+            gameInterval = setInterval(main, speed);
+        }
+
+        // Chức năng Tạm dừng / Tiếp tục
+        function togglePause() {
+            if (dx === 0 && dy === 0) return; // Chưa di chuyển thì không cần tạm dừng
+
+            isPaused = !isPaused;
+            const status = document.getElementById("statusText");
+            const btn = document.getElementById("pauseBtn");
+
+            if (isPaused) {
+                status.innerText = "Đang tạm dừng";
+                status.style.color = "#ff9800";
+                btn.innerText = "Tiếp Tục";
+            } else {
+                status.innerText = "Đang chạy";
+                status.style.color = "#4CAF50";
+                btn.innerText = "Tạm Dừng";
+            }
+        }
+
+        // Chức năng chơi lại màn hiện tại nhanh
+        function restartLevel() {
+            startLevel(currentLevel);
+        }
+
+        document.addEventListener("keydown", (e) => {
+            // Nếu đang tạm dừng thì không nhận phím điều hướng di chuyển
+            if (isPaused) return;
+
+            if (e.keyCode === 37 && dx === 0) { dx = -1; dy = 0; }
+            if (e.keyCode === 38 && dy === 0) { dx = 0; dy = -1; }
+            if (e.keyCode === 39 && dx === 0) { dx = 1; dy = 0; }
+            if (e.keyCode === 40 && dy === 0) { dx = 0; dy = 1; }
+
+            // Nhấn phím Cách (Spacebar) để tạm dừng nhanh
+            if (e.keyCode === 32) {
+                e.preventDefault();
+                togglePause();
+            }
+        });
+
+        function main() {
+            // Nếu đang trạng thái tạm dừng, dừng toàn bộ logic cập nhật màn hình
+            if (isPaused) return;
+
+            if (hasGameEnded()) {
+                alert("Bạn đã đâm vào tường/thân! Hãy thử lại màn này.");
+                startLevel(currentLevel);
+                return;
+            }
+
+            const config = getLevelConfig(currentLevel);
+            if (score >= config.target) {
+                clearInterval(gameInterval);
+                alert("🎉 CHÚC MỪNG! Bạn đã hoàn thành Màn " + currentLevel);
+
+                if (currentLevel === maxUnlockedLevel && maxUnlockedLevel < totalLevels) {
+                    maxUnlockedLevel++;
+                }
+                goBackToMenu();
+                return;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "#FF5252";
+            ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 1, gridSize - 1);
+
+            if (dx !== 0 || dy !== 0) {
+                const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+                snake.unshift(head);
+
+                if (snake[0].x === food.x && snake[0].y === food.y) {
+                    score++;
+                    document.getElementById("score").innerText = score;
+                    generateFood();
+                } else {
+                    snake.pop();
+                }
+            }
+
+            snake.forEach((part, index) => {
+                ctx.fillStyle = index === 0 ? "#2E7D32" : "#4CAF50";
+                ctx.fillRect(part.x * gridSize, part.y * gridSize, gridSize - 1, gridSize - 1);
+            });
+        }
+
+        function generateFood() {
+            food.x = Math.floor(Math.random() * tileCount);
+            food.y = Math.floor(Math.random() * tileCount);
+            snake.forEach(part => {
+                if (part.x === food.x && part.y === food.y) generateFood();
+            });
+        }
+
+        function hasGameEnded() {
+            if (snake.length === 0) return false;
+            const head = snake[0];
+            if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) return true;
+            for (let i = 1; i < snake.length; i++) {
+                if (snake[i].x === head.x && snake[i].y === head.y) return true;
+            }
+            return false;
+        }
+
+        function goBackToMenu() {
+            clearInterval(gameInterval);
+            document.getElementById("menuScreen").style.display = "block";
+            document.getElementById("infoBox").style.display = "none";
+            canvas.style.display = "none";
+            document.getElementById("controlPanel").style.display = "none";
+            createMenu();
+        }
+
+        createMenu();
+    </script>
+</body>
+</html>
